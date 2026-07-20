@@ -1,8 +1,8 @@
-# API 参考
+# 📖 API 参考
 
 ---
 
-## 编写 Handler
+## ✍️ 编写 Handler
 
 每个功能必须导出 `COMMANDS` 字典：
 
@@ -24,7 +24,7 @@ async def 函数名(bot, group_id: str, user_id: str) -> str | None:
 
 ---
 
-## bot 对象（bot.py）
+## 🤖 bot 对象（bot.py）
 
 发消息和查信息全靠它。
 
@@ -55,7 +55,7 @@ await bot._api_call("set_group_card", {"group_id": 123, "user_id": 456, "card": 
 
 ---
 
-## config 模块（config.py）
+## ⚙️ config 模块（config.py）
 
 ### `get(*keys, default=None)`
 
@@ -81,7 +81,7 @@ periods = cfg.get("checkin_periods", [])
 
 ---
 
-## 自动发现引擎（features/__init__.py）
+## 🔍 自动发现引擎（features/__init__.py）
 
 ### `discover()`
 

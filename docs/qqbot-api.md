@@ -1,10 +1,10 @@
-# QQ 机器人 API（OneBot v11）
+# 💬 QQ 机器人 API（OneBot v11）
 
 机器人底层通过 LLOneBot 的 OneBot v11 协议与 QQ 交互。所有 API 可通过 `bot._api_call(动作, 参数)` 调用。
 
 ---
 
-## 发消息
+## ✉️ 发消息
 
 ### send_group_msg — 发群消息
 
@@ -35,7 +35,7 @@ await bot._api_call("send_group_forward_msg", {
 
 ---
 
-## 获取信息
+## 📡 获取信息
 
 ### get_group_member_info — 群成员信息
 
@@ -83,7 +83,7 @@ await bot._api_call("get_stranger_info", {
 
 ---
 
-## 操作群
+## 🔧 操作群
 
 ### set_group_card — 设置群名片
 
@@ -127,7 +127,7 @@ await bot._api_call("set_group_admin", {
 
 ---
 
-## 消息格式
+## 🖼️ 消息格式
 
 ### 发送图片
 
@@ -152,7 +152,7 @@ await bot._api_call("send_group_msg", {
 
 ---
 
-## 说明
+## 📌 说明
 
 - `bot._api_call()` 返回 `dict`，含 `status`、`data`、`retcode` 字段
 - 调用失败返回 `None`

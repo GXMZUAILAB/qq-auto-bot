@@ -1,6 +1,6 @@
-# 开发文档
+# 📘 开发文档
 
-## 快速启动
+## 🚀 快速启动
 
 ```bash
 # 1. 装依赖
@@ -14,7 +14,7 @@ python main.py
 
 ---
 
-## 项目结构
+## 📂 项目结构
 
 ```
 config.yaml         ← 全局配置
@@ -28,7 +28,7 @@ config.py           ← 配置读取工具（不要改）
 
 ---
 
-## 加新功能（3 步）
+## 🧩 加新功能（3 步）
 
 **第 1 步：** 建功能目录和配置文件
 
@@ -75,11 +75,15 @@ cfg = load_feature_config("myfeature")   # 读 configs/myfeature.yaml
 my_key = cfg.get("my_key")               # 取值，没有则返回 None
 ```
 
-> **完成。** 启动时会自动发现，main.py 不需要改任何东西。
+> ✅ **完成。** 启动时会自动发现，main.py 不需要改任何东西。
+
+> 💡 **有现成的 Demo 可参考：** `features/demo/handler.py` + `configs/demo.yaml`
+>
+> 看完这 3 步再去看 Demo 代码，马上就能上手。
 
 ---
 
-## 配置说明
+## ⚙️ 配置说明
 
 | 文件 | 用途 |
 |------|------|
@@ -88,7 +92,7 @@ my_key = cfg.get("my_key")               # 取值，没有则返回 None
 
 ---
 
-## 数据存储
+## 💾 数据存储
 
 想存数据的话，怎么简单怎么来。最简单的就是用 JSON 文件：
 
@@ -123,7 +127,7 @@ save(d)          # 存回去
 
 ---
 
-## 常用操作
+## 🔧 常用操作
 
 ```bash
 python main.py                       # 启动
@@ -132,7 +136,7 @@ python -c "from features import discover, _commands; discover(); print(_commands
 
 ---
 
-## 注意事项
+## ⚠️ 注意事项
 
 - 每步功能里，**有 `COMMANDS` 字典才会被自动发现**
 - handler 函数必须是 `async`
