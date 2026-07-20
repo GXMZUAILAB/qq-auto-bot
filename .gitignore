@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 数据文件
+data/
+logs/
+
+# 运行时环境
+overflow-1.0.8/
+LLOneBot-win-x64-ffmpeg/
+jdk-*.exe
+
+# 旧目录
+my-python-plugin/
+
+# 系统
+.DS_Store
+Thumbs.db
