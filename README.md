@@ -37,6 +37,7 @@ docs/              ← 开发文档
 
 详见 `docs/` 目录：
 
-- `development.md` — 新手入门，3 步加新功能
-- `api.md` — 框架 API 速查
-- `qqbot-api.md` — QQ 机器人 API 速查
+- [`development.md`](docs/development.md) — 新手入门，3 步加新功能
+- [`api.md`](docs/api.md) — 框架 API 速查
+- [`qqbot-api.md`](docs/qqbot-api.md) — QQ 机器人 API 速查
+- [`mirai-deploy.md`](docs/mirai-deploy.md) — Overflow (Mirai) 部署与 AutoReply 自动回复教程
