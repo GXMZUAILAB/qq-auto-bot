@@ -6,18 +6,18 @@ from config import get, load_feature_config
 
 TIMEZONE = timedelta(hours=8)
 DB_FILE = get("data", "file", default="data/checkin_data.db")
-RETAIN_DAYS = get("data", "retain_days", default=90)
+RETAIN_DAYS = get("data", "retain_days", default=0)
 
 
 def _periods() -> list[dict]:
-    """读取签到时段配置，将 duration_hours 转为秒"""
+    """读取签到时段配置"""
     cfg = load_feature_config("checkin")
     raw = cfg.get("checkin_periods", [])
     return [{
         "name": p["name"],
         "start": p["start"],
         "end": p["end"],
-        "duration": p["duration_hours"] * 3600,
+        "duration": p["duration_hours"],
     } for p in raw]
 
 
@@ -109,7 +109,6 @@ def checkin(group_id: str, user_id: str) -> str:
     if period is None:
         return "当前不在可签到时段内。"
 
-    now = _now()
     today = _today_str()
 
     conn = _get_conn()
@@ -148,10 +147,10 @@ def statistics(group_id: str, user_id: str) -> str:
         week_start, week_end = _week_range()
         month = _month_str()
 
-        today_sec = _sum(conn, group_id, user_id, "date=?", (today,))
-        week_sec = _sum(conn, group_id, user_id, "date BETWEEN ? AND ?", (week_start, week_end))
-        month_sec = _sum(conn, group_id, user_id, "date LIKE ?", (month + "%",))
-        total_sec = _get_total(conn, group_id, user_id)
+        today_hours = _sum(conn, group_id, user_id, "date=?", (today,))
+        week_hours = _sum(conn, group_id, user_id, "date BETWEEN ? AND ?", (week_start, week_end))
+        month_hours = _sum(conn, group_id, user_id, "date LIKE ?", (month + "%",))
+        total_hours = _get_total(conn, group_id, user_id)
         days_count = conn.execute(
             "SELECT COUNT(DISTINCT date) FROM records WHERE group_id=? AND user_id=? AND duration>0",
             (group_id, user_id),
@@ -159,37 +158,15 @@ def statistics(group_id: str, user_id: str) -> str:
 
         return (
             f"📊 签到统计\n"
-            f"今日: {_format_duration(today_sec)}\n"
-            f"本周: {_format_duration(week_sec)}\n"
-            f"本月: {_format_duration(month_sec)}\n"
-            f"累计: {_format_duration(total_sec)}\n"
+            f"今日: {_format_duration(today_hours)}\n"
+            f"本周: {_format_duration(week_hours)}\n"
+            f"本月: {_format_duration(month_hours)}\n"
+            f"累计: {_format_duration(total_hours)}\n"
             f"签到天数: {days_count} 天"
         )
     finally:
         conn.close()
 
-
-async def ranking(group_id: str, name_resolver=None) -> str:
-    conn = _get_conn()
-    try:
-        rows = conn.execute(
-            "SELECT user_id, SUM(duration) as total FROM records WHERE group_id=? AND duration>0 GROUP BY user_id ORDER BY total DESC LIMIT 10",
-            (group_id,),
-        ).fetchall()
-
-        if not rows:
-            return "本群暂无签到数据。"
-
-        lines = ["🏆 签到时长排行"]
-        for i, row in enumerate(rows, 1):
-            dur = _format_duration(row["total"])
-            medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
-            name = await name_resolver(row["user_id"]) if name_resolver else row["user_id"]
-            lines.append(f"{medal} {name} — {dur}")
-
-        return "\n".join(lines)
-    finally:
-        conn.close()
 
 
 # ---- 内部辅助 ----
@@ -210,10 +187,5 @@ def _sum(conn: sqlite3.Connection, group_id: str, user_id: str, where: str, para
     return row[0]
 
 
-def _format_duration(seconds: int) -> str:
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-    if hours > 0:
-        return f"{hours}小时{minutes}分" if minutes else f"{hours}小时"
-    else:
-        return f"{minutes}分"
+def _format_duration(hours: int) -> str:
+    return f"{hours}小时" if hours > 0 else "0小时"
