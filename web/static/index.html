@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QQ Bot 数据统计</title>
+  <link rel="stylesheet" href="/style.css?v=3">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>📊 数据统计</h1>
+      <div id="db-tree"></div>
+    </aside>
+    <main class="content">
+      <div id="empty-hint" class="hint">在左侧选择一个数据库和表开始查看</div>
+      <div id="table-view" class="hidden">
+        <div class="toolbar">
+          <div class="mode-toggle">
+            <button id="mode-data" class="active">数据</button>
+            <button id="mode-stats">统计</button>
+          </div>
+          <span id="stats-controls" class="hidden">
+            分组: <select id="group-col"></select>
+            汇总: <select id="sum-col"></select>
+          </span>
+          <label id="select-all-wrap"><input type="checkbox" id="select-all" checked> 全选</label>
+          <button id="export-btn">📥 导出 Excel</button>
+          <span id="row-info"></span>
+        </div>
+        <div class="table-wrap">
+          <table id="data-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <button id="prev-btn">上一页</button>
+          <span id="page-info"></span>
+          <button id="next-btn">下一页</button>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/app.js?v=3"></script>
+</body>
+</html>
