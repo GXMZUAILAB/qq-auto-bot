@@ -121,6 +121,10 @@ function populateStatsSelects() {
   const text = cols.filter((c) => !/INT|REAL|NUM|DEC|FLOA|DOUB/i.test(c.type || ""));
   const groupDefault = text.find((c) => c.name.toLowerCase().includes("user")) || text[0] || cols[0];
   state.groupFields = groupDefault ? [groupDefault.name] : [];
+  const nameCol = cols.find((c) => /name|nick/i.test(c.name) && !/INT|REAL|NUM|DEC|FLOA|DOUB/i.test(c.type || ""));
+  if (nameCol && !state.groupFields.includes(nameCol.name)) {
+    state.groupFields.push(nameCol.name);
+  }
 
   state.hasSumCol = numeric.length > 0;
   sumCol.innerHTML = numeric.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");

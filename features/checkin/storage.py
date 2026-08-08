@@ -78,11 +78,16 @@ def _init_db(conn: sqlite3.Connection):
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             group_id    TEXT NOT NULL,
             user_id     TEXT NOT NULL,
+            user_name   TEXT DEFAULT '',
             date        TEXT NOT NULL,
             period      TEXT NOT NULL,
             duration    INTEGER DEFAULT 0
         )
     """)
+    # 兼容旧表：为已有 records 表补上 user_name 列
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(records)").fetchall()}
+    if "user_name" not in cols:
+        conn.execute("ALTER TABLE records ADD COLUMN user_name TEXT DEFAULT ''")
     conn.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_records_unique
             ON records(group_id, user_id, date, period)
@@ -101,7 +106,7 @@ def _cleanup(conn: sqlite3.Connection):
     conn.commit()
 
 
-def checkin(group_id: str, user_id: str) -> str:
+def checkin(group_id: str, user_id: str, user_name: str = "") -> str:
     if not group_id or not user_id:
         return "参数错误。"
 
@@ -124,8 +129,8 @@ def checkin(group_id: str, user_id: str) -> str:
 
         duration = period["duration"]
         conn.execute(
-            "INSERT INTO records (group_id, user_id, date, period, duration) VALUES (?, ?, ?, ?, ?)",
-            (group_id, user_id, today, period["name"], duration),
+            "INSERT INTO records (group_id, user_id, user_name, date, period, duration) VALUES (?, ?, ?, ?, ?, ?)",
+            (group_id, user_id, user_name, today, period["name"], duration),
         )
         conn.commit()
         _cleanup(conn)
