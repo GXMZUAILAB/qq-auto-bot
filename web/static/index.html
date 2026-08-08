@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>QQ Bot 数据统计</title>
-  <link rel="stylesheet" href="/style.css?v=3">
+  <link rel="stylesheet" href="/style.css?v=7">
 </head>
 <body>
   <div class="layout">
@@ -21,12 +21,29 @@
             <button id="mode-stats">统计</button>
           </div>
           <span id="stats-controls" class="hidden">
-            分组: <select id="group-col"></select>
+            分组: <span id="group-fields"></span>
+            <select id="group-add-col"></select>
+            <button id="group-add-btn" type="button">添加</button>
             汇总: <select id="sum-col"></select>
           </span>
+          <span id="stats-hint" class="hidden">该表无数字字段可汇总</span>
           <label id="select-all-wrap"><input type="checkbox" id="select-all" checked> 全选</label>
           <button id="export-btn">📥 导出 Excel</button>
           <span id="row-info"></span>
+        </div>
+        <div class="filter-bar" id="filter-bar">
+          <span>筛选</span>
+          <select id="filter-col"></select>
+          <input id="filter-val" type="text" placeholder="输入包含的文本">
+          <input id="filter-date" type="date" class="hidden">
+          <div id="filter-presets" class="hidden">
+            <button data-preset="today">今天</button>
+            <button data-preset="yesterday">昨天</button>
+            <button data-preset="month">本月</button>
+            <button data-preset="year">今年</button>
+          </div>
+          <button id="filter-apply">筛选</button>
+          <button id="filter-clear">清除</button>
         </div>
         <div class="table-wrap">
           <table id="data-table">
@@ -42,6 +59,6 @@
       </div>
     </main>
   </div>
-  <script src="/app.js?v=3"></script>
+  <script src="/app.js?v=7"></script>
 </body>
 </html>

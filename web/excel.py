@@ -25,11 +25,22 @@ def _build_xlsx(table_name: str, columns: list[str], rows: list) -> bytes:
     return buf.getvalue()
 
 
-def export_xlsx(db_name: str, table_name: str, fields: list[str] | None) -> bytes:
-    result = db.query_rows(db_name, table_name, fields)
+def export_xlsx(
+    db_name: str,
+    table_name: str,
+    fields: list[str] | None,
+    filter_col: str | None = None,
+    filter_val: str | None = None,
+) -> bytes:
+    result = db.query_rows(db_name, table_name, fields, filter_col, filter_val)
     return _build_xlsx(table_name, result["columns"], result["rows"])
 
 
-def export_aggregate_xlsx(db_name: str, table_name: str, group_by: str, sum_field: str) -> bytes:
-    result = db.aggregate(db_name, table_name, group_by, sum_field)
+def export_aggregate_xlsx(
+    db_name: str,
+    table_name: str,
+    group_fields: list[str],
+    sum_field: str,
+) -> bytes:
+    result = db.aggregate(db_name, table_name, group_fields, sum_field)
     return _build_xlsx(table_name, result["columns"], result["rows"])

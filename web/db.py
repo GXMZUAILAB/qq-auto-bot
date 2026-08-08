@@ -63,7 +63,27 @@ def list_tables(db_name: str) -> list[dict]:
         conn.close()
 
 
-def get_data(db_name: str, table_name: str, page: int = 1, size: int = 100) -> dict:
+def _filter_clause(
+    conn: sqlite3.Connection, table_name: str, filter_col: str | None, filter_val: str | None
+) -> tuple[str, tuple]:
+    """构造筛选 WHERE 片段（包含匹配），字段名走白名单校验"""
+    if not filter_col or not filter_val:
+        return "", ()
+    col_names = {r["name"] for r in _columns(conn, table_name)}
+    if filter_col not in col_names:
+        raise ValueError(f"筛选字段不存在: {filter_col}")
+    escaped = filter_val.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f" AND {_quote_ident(filter_col)} LIKE ? ESCAPE '\\'", (f"%{escaped}%",)
+
+
+def get_data(
+    db_name: str,
+    table_name: str,
+    page: int = 1,
+    size: int = 100,
+    filter_col: str | None = None,
+    filter_val: str | None = None,
+) -> dict:
     conn = _get_conn(db_name)
     try:
         if not _resolve_table(conn, table_name):
@@ -72,10 +92,15 @@ def get_data(db_name: str, table_name: str, page: int = 1, size: int = 100) -> d
         page = max(1, int(page))
         offset = (page - 1) * size
 
-        total = conn.execute(f"SELECT COUNT(*) FROM {_quote_ident(table_name)}").fetchone()[0]
+        where_sql, where_params = _filter_clause(conn, table_name, filter_col, filter_val)
+        table = _quote_ident(table_name)
+
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE 1=1{where_sql}", where_params
+        ).fetchone()[0]
         rows = conn.execute(
-            f"SELECT * FROM {_quote_ident(table_name)} LIMIT ? OFFSET ?",
-            (size, offset),
+            f"SELECT * FROM {table} WHERE 1=1{where_sql} LIMIT ? OFFSET ?",
+            where_params + (size, offset),
         ).fetchall()
         columns = [r["name"] for r in _columns(conn, table_name)]
 
@@ -90,27 +115,35 @@ def get_data(db_name: str, table_name: str, page: int = 1, size: int = 100) -> d
         conn.close()
 
 
-def aggregate(db_name: str, table_name: str, group_by: str, sum_field: str) -> dict:
-    """按指定字段分组、对另一字段求和"""
+def aggregate(
+    db_name: str,
+    table_name: str,
+    group_fields: list[str],
+    sum_field: str,
+) -> dict:
+    """按多个字段分组、对另一字段求和"""
     conn = _get_conn(db_name)
     try:
         if not _resolve_table(conn, table_name):
             raise ValueError(f"表不存在: {table_name}")
         col_names = {r["name"] for r in _columns(conn, table_name)}
-        if group_by not in col_names:
-            raise ValueError(f"分组字段不存在: {group_by}")
+        if not group_fields:
+            raise ValueError("请至少选择一个分组字段")
+        for gf in group_fields:
+            if gf not in col_names:
+                raise ValueError(f"分组字段不存在: {gf}")
         if sum_field not in col_names:
             raise ValueError(f"汇总字段不存在: {sum_field}")
 
+        group_sql = ", ".join(_quote_ident(gf) for gf in group_fields)
         rows = conn.execute(
-            f"SELECT {_quote_ident(group_by)} AS g, "
-            f"COALESCE(SUM({_quote_ident(sum_field)}), 0) AS total "
+            f"SELECT {group_sql}, COALESCE(SUM({_quote_ident(sum_field)}), 0) AS total "
             f"FROM {_quote_ident(table_name)} "
-            f"GROUP BY {_quote_ident(group_by)} "
+            f"GROUP BY {group_sql} "
             f"ORDER BY total DESC"
         ).fetchall()
         return {
-            "columns": [group_by, f"{sum_field} 汇总"],
+            "columns": group_fields + [f"{sum_field} 汇总"],
             "rows": [list(r) for r in rows],
             "total": len(rows),
         }
@@ -118,7 +151,13 @@ def aggregate(db_name: str, table_name: str, group_by: str, sum_field: str) -> d
         conn.close()
 
 
-def query_rows(db_name: str, table_name: str, fields: list[str] | None = None) -> dict:
+def query_rows(
+    db_name: str,
+    table_name: str,
+    fields: list[str] | None = None,
+    filter_col: str | None = None,
+    filter_val: str | None = None,
+) -> dict:
     """按字段白名单查询整表数据，供导出使用"""
     conn = _get_conn(db_name)
     try:
@@ -133,9 +172,11 @@ def query_rows(db_name: str, table_name: str, fields: list[str] | None = None) -
         else:
             selected = all_cols
 
+        where_sql, where_params = _filter_clause(conn, table_name, filter_col, filter_val)
         col_str = ", ".join(_quote_ident(c) for c in selected)
         rows = conn.execute(
-            f"SELECT {col_str} FROM {_quote_ident(table_name)}"
+            f"SELECT {col_str} FROM {_quote_ident(table_name)} WHERE 1=1{where_sql}",
+            where_params,
         ).fetchall()
         return {"columns": selected, "rows": [list(r) for r in rows]}
     finally:

@@ -6,8 +6,11 @@ const state = {
   size: 100,
   total: 0,
   mode: "data", // 'data' | 'stats'
-  groupBy: null,
+  groupFields: [],
   sumField: null,
+  hasSumCol: false,
+  filterCol: null,
+  filterVal: "",
 };
 
 let currentColumns = [];
@@ -26,8 +29,18 @@ const nextBtn = document.getElementById("next-btn");
 const modeDataBtn = document.getElementById("mode-data");
 const modeStatsBtn = document.getElementById("mode-stats");
 const statsControls = document.getElementById("stats-controls");
-const groupCol = document.getElementById("group-col");
+const statsHint = document.getElementById("stats-hint");
+const groupFields = document.getElementById("group-fields");
+const groupAddCol = document.getElementById("group-add-col");
+const groupAddBtn = document.getElementById("group-add-btn");
 const sumCol = document.getElementById("sum-col");
+const filterBar = document.getElementById("filter-bar");
+const filterCol = document.getElementById("filter-col");
+const filterVal = document.getElementById("filter-val");
+const filterDate = document.getElementById("filter-date");
+const filterPresets = document.getElementById("filter-presets");
+const filterApply = document.getElementById("filter-apply");
+const filterClear = document.getElementById("filter-clear");
 
 const enc = encodeURIComponent;
 
@@ -89,6 +102,7 @@ async function loadTables(item, db) {
       state.columns = t.columns;
       state.page = 1;
       populateStatsSelects();
+      populateFilterCol();
       if (state.mode === "stats") {
         loadStats();
       } else {
@@ -101,22 +115,92 @@ async function loadTables(item, db) {
 
 function populateStatsSelects() {
   const cols = state.columns || [];
-  groupCol.innerHTML = cols.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
-  sumCol.innerHTML = cols.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
+  groupAddCol.innerHTML = cols.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
 
   const numeric = cols.filter((c) => /INT|REAL|NUM|DEC|FLOA|DOUB/i.test(c.type || ""));
   const text = cols.filter((c) => !/INT|REAL|NUM|DEC|FLOA|DOUB/i.test(c.type || ""));
   const groupDefault = text.find((c) => c.name.toLowerCase().includes("user")) || text[0] || cols[0];
-  const sumDefault = numeric[0] || cols[0];
-  if (groupDefault) groupCol.value = groupDefault.name;
-  if (sumDefault) sumCol.value = sumDefault.name;
+  state.groupFields = groupDefault ? [groupDefault.name] : [];
 
-  state.groupBy = groupCol.value || null;
-  state.sumField = sumCol.value || null;
+  state.hasSumCol = numeric.length > 0;
+  sumCol.innerHTML = numeric.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
+  sumCol.disabled = !state.hasSumCol;
+  const sumDefault = numeric.find((c) => c.name.toLowerCase() !== "id") || numeric[0];
+  if (sumDefault) sumCol.value = sumDefault.name;
+  state.sumField = state.hasSumCol ? (sumCol.value || null) : null;
+
+  renderGroupFields();
+  updateStatsControls();
+}
+
+function updateStatsControls() {
+  const inStats = state.mode === "stats";
+  statsControls.classList.toggle("hidden", !inStats || !state.hasSumCol);
+  statsHint.classList.toggle("hidden", !inStats || state.hasSumCol);
+}
+
+function renderGroupFields() {
+  groupFields.innerHTML = state.groupFields.map((f) =>
+    `<span class="group-field">${escapeHtml(f)} <button type="button" class="gf-remove" data-field="${escapeHtml(f)}">×</button></span>`
+  ).join("") || '<span class="group-field-empty">未选择分组字段</span>';
+}
+
+function populateFilterCol() {
+  const cols = state.columns || [];
+  filterCol.innerHTML = cols.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join("");
+  const groupDefault = cols.find((c) => c.name.toLowerCase().includes("group")) || cols[0];
+  if (groupDefault) filterCol.value = groupDefault.name;
+  state.filterCol = filterCol.value || null;
+  resetFilterInputs();
+}
+
+function isDateColumn(name) {
+  return /date|time|day|created|updated/i.test(name);
+}
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function presetValue(preset) {
+  const d = new Date();
+  if (preset === "today") return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  if (preset === "yesterday") {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    return `${y.getFullYear()}-${pad2(y.getMonth() + 1)}-${pad2(y.getDate())}`;
+  }
+  if (preset === "month") return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+  if (preset === "year") return `${d.getFullYear()}`;
+  return "";
+}
+
+function resetFilterInputs() {
+  state.filterVal = "";
+  filterVal.value = "";
+  filterDate.value = "";
+  updateFilterInputMode();
+}
+
+function updateFilterInputMode() {
+  const isDate = isDateColumn(state.filterCol || "");
+  filterVal.classList.toggle("hidden", isDate);
+  filterDate.classList.toggle("hidden", !isDate);
+  filterPresets.classList.toggle("hidden", !isDate);
+}
+
+function reloadCurrent() {
+  if (state.mode === "stats") loadStats();
+  else loadData();
+}
+
+function filterQuery() {
+  if (!state.filterCol || !state.filterVal) return "";
+  return `&filter_col=${enc(state.filterCol)}&filter_val=${enc(state.filterVal)}`;
 }
 
 async function loadData() {
-  const url = `/api/data?db=${enc(state.db)}&table=${enc(state.table)}&page=${state.page}&size=${state.size}`;
+  const url = `/api/data?db=${enc(state.db)}&table=${enc(state.table)}&page=${state.page}&size=${state.size}${filterQuery()}`;
   const res = await fetch(url);
   if (!res.ok) {
     alert(await res.text());
@@ -132,8 +216,15 @@ async function loadData() {
 }
 
 async function loadStats() {
-  if (!state.groupBy || !state.sumField) return;
-  const url = `/api/aggregate?db=${enc(state.db)}&table=${enc(state.table)}&group_by=${enc(state.groupBy)}&sum=${enc(state.sumField)}`;
+  if (!state.groupFields.length || !state.sumField) {
+    state.total = 0;
+    emptyHint.classList.add("hidden");
+    tableView.classList.remove("hidden");
+    renderTable([], []);
+    renderPagination();
+    return;
+  }
+  const url = `/api/aggregate?db=${enc(state.db)}&table=${enc(state.table)}&group_by=${enc(state.groupFields.join(","))}&sum=${enc(state.sumField)}`;
   const res = await fetch(url);
   if (!res.ok) {
     alert(await res.text());
@@ -203,10 +294,10 @@ function selectedColumns() {
 async function exportExcel() {
   let url;
   if (state.mode === "stats") {
-    url = `/api/export?db=${enc(state.db)}&table=${enc(state.table)}&group_by=${enc(state.groupBy)}&sum=${enc(state.sumField)}`;
+    url = `/api/export?db=${enc(state.db)}&table=${enc(state.table)}&group_by=${enc(state.groupFields.join(","))}&sum=${enc(state.sumField)}`;
   } else {
     const fields = selectedColumns().join(",");
-    url = `/api/export?db=${enc(state.db)}&table=${enc(state.table)}&fields=${enc(fields)}`;
+    url = `/api/export?db=${enc(state.db)}&table=${enc(state.table)}&fields=${enc(fields)}${filterQuery()}`;
   }
   const res = await fetch(url);
   if (!res.ok) {
@@ -233,8 +324,9 @@ function setMode(mode) {
   state.mode = mode;
   modeDataBtn.classList.toggle("active", mode === "data");
   modeStatsBtn.classList.toggle("active", mode === "stats");
-  statsControls.classList.toggle("hidden", mode !== "stats");
   selectAllWrap.classList.toggle("hidden", mode === "stats");
+  filterBar.classList.toggle("hidden", mode === "stats");
+  updateStatsControls();
   if (!state.table) return;
   if (mode === "stats") {
     loadStats();
@@ -256,8 +348,52 @@ exportBtn.addEventListener("click", exportExcel);
 modeDataBtn.addEventListener("click", () => setMode("data"));
 modeStatsBtn.addEventListener("click", () => setMode("stats"));
 
-groupCol.addEventListener("change", () => {
-  state.groupBy = groupCol.value || null;
+filterApply.addEventListener("click", () => {
+  state.filterCol = filterCol.value || null;
+  state.filterVal = filterVal.value.trim();
+  state.page = 1;
+  reloadCurrent();
+});
+
+filterClear.addEventListener("click", () => {
+  resetFilterInputs();
+  state.page = 1;
+  reloadCurrent();
+});
+
+filterCol.addEventListener("change", () => {
+  state.filterCol = filterCol.value || null;
+  resetFilterInputs();
+});
+
+filterDate.addEventListener("change", () => {
+  state.filterVal = filterDate.value;
+  state.page = 1;
+  reloadCurrent();
+});
+
+filterPresets.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-preset]");
+  if (!btn) return;
+  state.filterVal = presetValue(btn.dataset.preset);
+  state.page = 1;
+  reloadCurrent();
+});
+
+groupAddBtn.addEventListener("click", () => {
+  const v = groupAddCol.value;
+  if (v && !state.groupFields.includes(v)) {
+    state.groupFields.push(v);
+    renderGroupFields();
+    loadStats();
+  }
+});
+
+groupFields.addEventListener("click", (e) => {
+  const btn = e.target.closest(".gf-remove");
+  if (!btn) return;
+  state.groupFields = state.groupFields.filter((f) => f !== btn.dataset.field);
+  renderGroupFields();
   loadStats();
 });
 

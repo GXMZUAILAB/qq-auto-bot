@@ -32,9 +32,13 @@ def create_app() -> FastAPI:
         table_name: str = Query(alias="table"),
         page: int = 1,
         size: int = 100,
+        filter_col: str = Query(alias="filter_col", default=""),
+        filter_val: str = Query(alias="filter_val", default=""),
     ):
         try:
-            return db.get_data(db_name, table_name, page, size)
+            return db.get_data(
+                db_name, table_name, page, size, filter_col or None, filter_val or None
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -46,7 +50,8 @@ def create_app() -> FastAPI:
         sum_field: str = Query(alias="sum"),
     ):
         try:
-            return db.aggregate(db_name, table_name, group_by, sum_field)
+            group_fields = [g.strip() for g in group_by.split(",") if g.strip()]
+            return db.aggregate(db_name, table_name, group_fields, sum_field)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -57,13 +62,17 @@ def create_app() -> FastAPI:
         fields: str = "",
         group_by: str = Query(alias="group_by", default=""),
         sum_field: str = Query(alias="sum", default=""),
+        filter_col: str = Query(alias="filter_col", default=""),
+        filter_val: str = Query(alias="filter_val", default=""),
     ):
         try:
+            fc, fv = filter_col or None, filter_val or None
             if group_by and sum_field:
-                content = excel.export_aggregate_xlsx(db_name, table_name, group_by, sum_field)
+                group_fields = [g.strip() for g in group_by.split(",") if g.strip()]
+                content = excel.export_aggregate_xlsx(db_name, table_name, group_fields, sum_field)
             else:
                 field_list = [f.strip() for f in fields.split(",") if f.strip()] or None
-                content = excel.export_xlsx(db_name, table_name, field_list)
+                content = excel.export_xlsx(db_name, table_name, field_list, fc, fv)
             filename = f"{db_name}_{table_name}.xlsx"
             return Response(
                 content,
