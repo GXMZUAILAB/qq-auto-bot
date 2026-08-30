@@ -9,16 +9,21 @@ DB_FILE = get("data", "file", default="data/checkin_data.db")
 RETAIN_DAYS = get("data", "retain_days", default=0)
 
 
-def _periods() -> list[dict]:
-    """读取签到时段配置"""
+def _shifts() -> list[dict]:
+    """读取班次配置"""
     cfg = load_feature_config("checkin")
-    raw = cfg.get("checkin_periods", [])
-    return [{
-        "name": p["name"],
-        "start": p["start"],
-        "end": p["end"],
-        "duration": p["duration_hours"],
-    } for p in raw]
+    raw = cfg.get("checkin_shifts", [])
+    shifts = []
+    for s in raw:
+        ah, am = map(int, s["arrive"].split(":"))
+        lh, lm = map(int, s["leave"].split(":"))
+        shifts.append({
+            "name": s["name"],
+            "duration": s["duration_hours"],
+            "arrive_m": ah * 60 + am,
+            "leave_m": lh * 60 + lm,
+        })
+    return shifts
 
 
 def _now() -> datetime:
@@ -29,36 +34,14 @@ def _today_str() -> str:
     return _now().strftime("%Y-%m-%d")
 
 
-def _week_range() -> tuple[str, str]:
-    today = _now()
-    monday = today - timedelta(days=today.weekday())
-    sunday = monday + timedelta(days=6)
-    return monday.strftime("%Y-%m-%d"), sunday.strftime("%Y-%m-%d")
-
-
-def _month_str() -> str:
-    return _now().strftime("%Y-%m")
-
-
-def _current_period() -> dict | None:
-    """根据当前时间匹配对应的时段"""
+def _current_shift() -> dict | None:
+    """根据当前时间匹配对应班次（到岗 ~ 离岗）"""
     now = _now()
-    t = now.hour * 60 + now.minute  # 当前分钟数
+    t = now.hour * 60 + now.minute
 
-    for p in _periods():
-        sh, sm = map(int, p["start"].split(":"))
-        eh, em = map(int, p["end"].split(":"))
-        start_m = sh * 60 + sm
-        end_m = eh * 60 + em
-
-        if start_m <= end_m:
-            # 正常时段（如 09:00~12:00）
-            if start_m <= t < end_m:
-                return p
-        else:
-            # 跨午夜时段（如 18:00~05:00）
-            if t >= start_m or t < end_m:
-                return p
+    for s in _shifts():
+        if s["arrive_m"] <= t < s["leave_m"]:
+            return s
     return None
 
 
@@ -110,37 +93,32 @@ def checkin(group_id: str, user_id: str, user_name: str = "") -> str:
     if not group_id or not user_id:
         return "参数错误。"
 
-    period = _current_period()
-    if period is None:
-        return "当前不在可签到时段内。"
+    shift = _current_shift()
+    if shift is None:
+        return "当前不在任何班次的到岗~离岗时段内。"
 
     today = _today_str()
 
     conn = _get_conn()
     try:
-        # 检查该时段是否已签到
+        # 检查该班次是否已签到
         row = conn.execute(
             "SELECT id FROM records WHERE group_id=? AND user_id=? AND date=? AND period=?",
-            (group_id, user_id, today, period["name"]),
+            (group_id, user_id, today, shift["name"]),
         ).fetchone()
 
         if row:
-            return f"你今天「{period['name']}」已经签到过了。"
+            return f"你今天「{shift['name']}」已经签到过了。"
 
-        duration = period["duration"]
+        duration = shift["duration"]
         conn.execute(
             "INSERT INTO records (group_id, user_id, user_name, date, period, duration) VALUES (?, ?, ?, ?, ?, ?)",
-            (group_id, user_id, user_name, today, period["name"], duration),
+            (group_id, user_id, user_name, today, shift["name"], duration),
         )
         conn.commit()
         _cleanup(conn)
 
-        total = _get_total(conn, group_id, user_id)
-        return (
-            f"签到成功！时段: {period['name']}\n"
-            f"+{_format_duration(duration)}\n"
-            f"累计时长: {_format_duration(total)}"
-        )
+        return f"签到成功! {shift['name']} +{_format_duration(duration)}"
     finally:
         conn.close()
 
@@ -149,29 +127,18 @@ def statistics(group_id: str, user_id: str) -> str:
     conn = _get_conn()
     try:
         today = _today_str()
-        week_start, week_end = _week_range()
-        month = _month_str()
-
-        today_hours = _sum(conn, group_id, user_id, "date=?", (today,))
-        week_hours = _sum(conn, group_id, user_id, "date BETWEEN ? AND ?", (week_start, week_end))
-        month_hours = _sum(conn, group_id, user_id, "date LIKE ?", (month + "%",))
-        total_hours = _get_total(conn, group_id, user_id)
-        days_count = conn.execute(
-            "SELECT COUNT(DISTINCT date) FROM records WHERE group_id=? AND user_id=? AND duration>0",
-            (group_id, user_id),
+        today_minutes = conn.execute(
+            "SELECT COALESCE(SUM(duration), 0) FROM records WHERE group_id=? AND user_id=? AND date=?",
+            (group_id, user_id, today),
         ).fetchone()[0]
+        total_minutes = _get_total(conn, group_id, user_id)
 
         return (
-            f"📊 签到统计\n"
-            f"今日: {_format_duration(today_hours)}\n"
-            f"本周: {_format_duration(week_hours)}\n"
-            f"本月: {_format_duration(month_hours)}\n"
-            f"累计: {_format_duration(total_hours)}\n"
-            f"签到天数: {days_count} 天"
+            f"今日: {_format_duration(today_minutes)}\n"
+            f"累计: {_format_duration(total_minutes)}"
         )
     finally:
         conn.close()
-
 
 
 # ---- 内部辅助 ----
@@ -180,14 +147,6 @@ def _get_total(conn: sqlite3.Connection, group_id: str, user_id: str) -> int:
     row = conn.execute(
         "SELECT COALESCE(SUM(duration), 0) FROM records WHERE group_id=? AND user_id=?",
         (group_id, user_id),
-    ).fetchone()
-    return row[0]
-
-
-def _sum(conn: sqlite3.Connection, group_id: str, user_id: str, where: str, params: tuple) -> int:
-    row = conn.execute(
-        f"SELECT COALESCE(SUM(duration), 0) FROM records WHERE group_id=? AND user_id=? AND {where}",
-        (group_id, user_id) + params,
     ).fetchone()
     return row[0]
 

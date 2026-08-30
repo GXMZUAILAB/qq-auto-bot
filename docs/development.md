@@ -60,6 +60,12 @@ COMMANDS = {
     "/hello": cmd_hello,   # 群友发 /hello → 执行 cmd_hello
     "/help":  cmd_help,
 }
+
+# 想用"模糊匹配"触发（正则），再导出 COMMAND_PATTERNS：
+# 群友发"文综楼已到"、"博达楼已到"这类 "XX楼已到" 都会触发
+COMMAND_PATTERNS = {
+    r"^[\u4e00-\u9fa5]+楼已到$": cmd_hello,  # 键是正则，消息全匹配才触发
+}
 ```
 
 **第 3 步：** 写配置（可选）
@@ -131,14 +137,15 @@ save(d)          # 存回去
 
 ```bash
 python main.py                       # 启动
-python -c "from features import discover, _commands; discover(); print(_commands.keys())"  # 查看已注册的命令
+# 查看已注册的命令（精确 + 正则）
+python -c "from features import discover, _commands, _patterns; discover(); print(list(_commands), [p.pattern for p, _ in _patterns])"
 ```
 
 ---
 
 ## ⚠️ 注意事项
 
-- 每步功能里，**有 `COMMANDS` 字典才会被自动发现**
+- 每步功能里，**有 `COMMANDS`（精确）或 `COMMAND_PATTERNS`（正则）才会被自动发现**
 - handler 函数必须是 `async`
 - 所有 handler 签名：`(bot, group_id, user_id)` 三个参数
 - 返回 `None` 或空字符串 = 不回复

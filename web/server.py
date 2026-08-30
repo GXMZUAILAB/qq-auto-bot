@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
@@ -52,6 +52,33 @@ def create_app() -> FastAPI:
         try:
             group_fields = [g.strip() for g in group_by.split(",") if g.strip()]
             return db.aggregate(db_name, table_name, group_fields, sum_field)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/row")
+    async def api_insert_row(request: Request):
+        body = await request.json()
+        db_name, table_name = body.get("db"), body.get("table")
+        try:
+            return db.insert_row(db_name, table_name, body.get("values", {}))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.put("/api/row")
+    async def api_update_row(request: Request):
+        body = await request.json()
+        db_name, table_name = body.get("db"), body.get("table")
+        try:
+            return db.update_row(db_name, table_name, body.get("key"), body.get("values", {}))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.delete("/api/row")
+    async def api_delete_row(request: Request):
+        body = await request.json()
+        db_name, table_name = body.get("db"), body.get("table")
+        try:
+            return db.delete_row(db_name, table_name, body.get("key"))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 

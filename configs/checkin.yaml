@@ -1,23 +1,23 @@
 # ============================================
 # 签到功能配置
-# 每个时段每人每天只能签到一次
-# 时段按顺序匹配，跨午夜自动处理
+# 每天按班次划分，每班次每人每天只能签到一次
+# 签到判定：当前时间落在该班次的到岗(arrive) ~ 离岗(leave) 区间
 # ============================================
 
-checkin_periods:
-  - name: "早上"
-    start: "05:00"
-    end:   "09:00"
-    duration_hours: 2
-  - name: "上午"
-    start: "09:00"
-    end:   "12:00"
+checkin_shifts:
+  - name: "一班次"
+    arrive: "07:40"       # 到岗时间
+    leave: "09:20"        # 离岗时间
+    duration_hours: 2     # 录入时长（小时）
+  - name: "二班次"
+    arrive: "09:50"
+    leave: "12:20"
     duration_hours: 3
-  - name: "下午"
-    start: "12:00"
-    end:   "18:00"
+  - name: "三班次"
+    arrive: "14:10"
+    leave: "15:50"
     duration_hours: 2
-  - name: "晚上"
-    start: "18:00"
-    end:   "05:00"
-    duration_hours: 1
+  - name: "四班次"
+    arrive: "16:20"
+    leave: "18:00"
+    duration_hours: 2

@@ -4,11 +4,16 @@
 
 ## ✍️ 编写 Handler
 
-每个功能必须导出 `COMMANDS` 字典：
+每个功能需导出 `COMMANDS`（精确匹配）或 `COMMAND_PATTERNS`（正则匹配）字典：
 
 ```python
 COMMANDS = {
     "/命令": 处理函数,
+}
+
+# 正则命令：键为正则字符串，消息全匹配时触发
+COMMAND_PATTERNS = {
+    r"^[\u4e00-\u9fa5]+楼已到$": 处理函数,
 }
 ```
 
@@ -74,7 +79,7 @@ file = get("data", "file", default="data.db")      # 取不到时返回默认值
 ```python
 from config import load_feature_config
 cfg = load_feature_config("checkin")
-periods = cfg.get("checkin_periods", [])
+shifts = cfg.get("checkin_shifts", [])
 ```
 
 找不到配置文件时返回空字典 `{}`，不会报错。
@@ -85,8 +90,8 @@ periods = cfg.get("checkin_periods", [])
 
 ### `discover()`
 
-扫描 `features/` 下所有子包，收集 `COMMANDS`。启动时自动调用，一般不需要手动调。
+扫描 `features/` 下所有子包，收集 `COMMANDS`（精确）与 `COMMAND_PATTERNS`（正则）。启动时自动调用，一般不需要手动调。
 
 ### `dispatch(bot, group_id, user_id, text)`
 
-路由消息到对应的命令处理器。找不到命令返回 `None`。
+路由消息到对应的命令处理器。先精确匹配 `COMMANDS`，再按注册顺序依次尝试 `COMMAND_PATTERNS` 的正则全匹配，都找不到返回 `None`。

@@ -11,6 +11,9 @@ const state = {
   hasSumCol: false,
   filterCol: null,
   filterVal: "",
+  keys: [],      // 当前页每行的识别键 [[[列,值],...], ...]
+  rows: [],      // 当前页每行数据（用于编辑回填）
+  editKey: null, // 正在编辑的行键
 };
 
 let currentColumns = [];
@@ -21,7 +24,13 @@ const tableView = document.getElementById("table-view");
 const dataTable = document.getElementById("data-table");
 const selectAll = document.getElementById("select-all");
 const selectAllWrap = document.getElementById("select-all-wrap");
+const addBtn = document.getElementById("add-btn");
 const exportBtn = document.getElementById("export-btn");
+const modalOverlay = document.getElementById("modal-overlay");
+const modalTitle = document.getElementById("modal-title");
+const modalForm = document.getElementById("modal-form");
+const modalSave = document.getElementById("modal-save");
+const modalCancel = document.getElementById("modal-cancel");
 const rowInfo = document.getElementById("row-info");
 const pageInfo = document.getElementById("page-info");
 const prevBtn = document.getElementById("prev-btn");
@@ -212,6 +221,8 @@ async function loadData() {
   }
   const data = await res.json();
   state.total = data.total;
+  state.keys = data.keys || [];
+  state.rows = data.rows || [];
 
   emptyHint.classList.add("hidden");
   tableView.classList.remove("hidden");
@@ -253,10 +264,14 @@ function renderTable(columns, rows) {
     ${columns.map((c, i) => showCheck
       ? `<th><label><input type="checkbox" class="col-check" data-index="${i}" checked><span class="col-label">${escapeHtml(c)}</span></label></th>`
       : `<th>${escapeHtml(c)}</th>`).join("")}
+    ${showCheck ? "<th>操作</th>" : ""}
   </tr>`;
 
-  tbody.innerHTML = rows.map((row) => `
-    <tr>${row.map((cell) => `<td>${escapeHtml(cell == null ? "" : cell)}</td>`).join("")}</tr>
+  tbody.innerHTML = rows.map((row, r) => `
+    <tr>
+      ${row.map((cell) => `<td>${escapeHtml(cell == null ? "" : cell)}</td>`).join("")}
+      ${showCheck ? `<td class="row-actions"><button type="button" class="act-btn" data-act="edit" data-row="${r}">编辑</button><button type="button" class="act-btn act-danger" data-act="del" data-row="${r}">删除</button></td>` : ""}
+    </tr>
   `).join("");
 
   if (showCheck) {
@@ -324,11 +339,79 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
+function openRowModal(index) {
+  const editing = index != null;
+  const row = editing ? (state.rows[index] || []) : [];
+  state.editKey = editing ? (state.keys[index] || null) : null;
+  modalTitle.textContent = editing ? "编辑记录" : "新增记录";
+  modalForm.innerHTML = state.columns.map((c) => {
+    const pos = currentColumns.indexOf(c.name);
+    const val = editing ? (row[pos] ?? "") : "";
+    const disabledAttr = editing && c.pk > 0 ? " disabled" : "";
+    const placeholder = c.pk > 0 && !editing ? ' placeholder="自动生成"' : "";
+    return `<label class="field">${escapeHtml(c.name)}${c.pk > 0 ? "（主键）" : ""}
+      <input type="text" name="${escapeHtml(c.name)}" value="${escapeHtml(val)}"${disabledAttr}${placeholder}></label>`;
+  }).join("");
+  modalOverlay.classList.remove("hidden");
+}
+
+function closeModal() {
+  modalOverlay.classList.add("hidden");
+  state.editKey = null;
+}
+
+async function saveRow() {
+  const values = {};
+  modalForm.querySelectorAll("input[name]").forEach((input) => {
+    values[input.name] = input.value;
+  });
+  const editing = !!state.editKey;
+  const body = { db: state.db, table: state.table, values };
+  let res;
+  if (editing) {
+    body.key = state.editKey;
+    res = await fetch("/api/row", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } else {
+    res = await fetch("/api/row", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+  if (!res.ok) {
+    alert(await res.text());
+    return;
+  }
+  closeModal();
+  if (!editing) state.page = 1;
+  reloadCurrent();
+}
+
+async function deleteRow(index) {
+  const key = state.keys[index];
+  if (!key || !confirm("确定删除这一行吗？")) return;
+  const res = await fetch("/api/row", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ db: state.db, table: state.table, key }),
+  });
+  if (!res.ok) {
+    alert(await res.text());
+    return;
+  }
+  reloadCurrent();
+}
+
 function setMode(mode) {
   state.mode = mode;
   modeDataBtn.classList.toggle("active", mode === "data");
   modeStatsBtn.classList.toggle("active", mode === "stats");
   selectAllWrap.classList.toggle("hidden", mode === "stats");
+  addBtn.classList.toggle("hidden", mode === "stats");
   filterBar.classList.toggle("hidden", mode === "stats");
   updateStatsControls();
   if (!state.table) return;
@@ -346,6 +429,21 @@ selectAll.addEventListener("change", () => {
 
 dataTable.addEventListener("change", (e) => {
   if (e.target.classList.contains("col-check")) syncSelectAll();
+});
+
+dataTable.addEventListener("click", (e) => {
+  const btn = e.target.closest(".act-btn");
+  if (!btn) return;
+  const r = Number(btn.dataset.row);
+  if (btn.dataset.act === "edit") openRowModal(r);
+  else if (btn.dataset.act === "del") deleteRow(r);
+});
+
+addBtn.addEventListener("click", () => openRowModal(null));
+modalSave.addEventListener("click", saveRow);
+modalCancel.addEventListener("click", closeModal);
+modalOverlay.addEventListener("click", (e) => {
+  if (e.target === modalOverlay) closeModal();
 });
 
 exportBtn.addEventListener("click", exportExcel);

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>QQ Bot 数据统计</title>
-  <link rel="stylesheet" href="/style.css?v=7">
+  <link rel="stylesheet" href="/style.css?v=9">
 </head>
 <body>
   <div class="layout">
@@ -28,6 +28,7 @@
           </span>
           <span id="stats-hint" class="hidden">该表无数字字段可汇总</span>
           <label id="select-all-wrap"><input type="checkbox" id="select-all" checked> 全选</label>
+          <button id="add-btn">➕ 新增</button>
           <button id="export-btn">📥 导出 Excel</button>
           <span id="row-info"></span>
         </div>
@@ -59,6 +60,18 @@
       </div>
     </main>
   </div>
-  <script src="/app.js?v=8"></script>
+
+  <div id="modal-overlay" class="hidden">
+    <div class="modal">
+      <h3 id="modal-title"></h3>
+      <div id="modal-form" class="modal-form"></div>
+      <div class="modal-actions">
+        <button id="modal-save" type="button">保存</button>
+        <button id="modal-cancel" type="button" class="btn-plain">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js?v=9"></script>
 </body>
 </html>

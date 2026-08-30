@@ -12,6 +12,10 @@ async def _statistics(bot, group_id: str, user_id: str) -> str:
 
 
 COMMANDS = {
-    "/签到": _checkin,
-    "/签到统计": _statistics,
+    "签到统计": _statistics,
+}
+
+# 签到触发词："文综楼已到"、"博达楼已到" 等 "XX楼已到"
+COMMAND_PATTERNS = {
+    r"^[\u4e00-\u9fa5]+楼已到$": _checkin,
 }

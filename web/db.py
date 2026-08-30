@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
@@ -39,7 +40,11 @@ def _quote_ident(name: str) -> str:
 
 def _columns(conn: sqlite3.Connection, table_name: str) -> list[dict]:
     rows = conn.execute(f"PRAGMA table_info({_quote_ident(table_name)})").fetchall()
-    return [{"name": r["name"], "type": r["type"]} for r in rows]
+    return [{"name": r["name"], "type": r["type"], "pk": r["pk"]} for r in rows]
+
+
+def _pk_columns(conn: sqlite3.Connection, table_name: str) -> list[str]:
+    return [r["name"] for r in _columns(conn, table_name) if r["pk"] > 0]
 
 
 def _resolve_table(conn: sqlite3.Connection, table_name: str) -> bool:
@@ -98,15 +103,29 @@ def get_data(
         total = conn.execute(
             f"SELECT COUNT(*) FROM {table} WHERE 1=1{where_sql}", where_params
         ).fetchone()[0]
-        rows = conn.execute(
-            f"SELECT * FROM {table} WHERE 1=1{where_sql} LIMIT ? OFFSET ?",
-            where_params + (size, offset),
-        ).fetchall()
-        columns = [r["name"] for r in _columns(conn, table_name)]
+
+        pk_cols = _pk_columns(conn, table_name)
+        if pk_cols:
+            rows = conn.execute(
+                f"SELECT * FROM {table} WHERE 1=1{where_sql} LIMIT ? OFFSET ?",
+                where_params + (size, offset),
+            ).fetchall()
+            columns = [r["name"] for r in _columns(conn, table_name)]
+            keys = [[[c, row[c]] for c in pk_cols] for row in rows]
+        else:
+            # 无主键时用 rowid 识别行，_rowid 不进入展示列
+            rows = conn.execute(
+                f"SELECT rowid AS _rowid, * FROM {table} WHERE 1=1{where_sql} LIMIT ? OFFSET ?",
+                where_params + (size, offset),
+            ).fetchall()
+            columns = [r["name"] for r in _columns(conn, table_name)]
+            keys = [[["rowid", row["_rowid"]]] for row in rows]
+            rows = [[row[c] for c in columns] for row in rows]
 
         return {
             "columns": columns,
             "rows": [list(r) for r in rows],
+            "keys": keys,
             "total": total,
             "page": page,
             "size": size,
@@ -179,5 +198,118 @@ def query_rows(
             where_params,
         ).fetchall()
         return {"columns": selected, "rows": [list(r) for r in rows]}
+    finally:
+        conn.close()
+
+
+# ---- 增删改 ----
+
+def _coerce(value, col_type: str | None):
+    """按列类型亲和性轻量转换：数字列转数字、空串转 NULL"""
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip() == "":
+        return None
+    if col_type and re.search(r"INT|REAL|NUM|DEC|FLOA|DOUB", col_type, re.I):
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            pass
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            pass
+    return value
+
+
+def _validate_values(conn: sqlite3.Connection, table_name: str, values: dict) -> dict:
+    """列名白名单过滤，返回清洗后的 values"""
+    if not isinstance(values, dict):
+        raise ValueError("values 必须是对象")
+    cols = {r["name"]: r["type"] for r in _columns(conn, table_name)}
+    clean = {}
+    for k, v in values.items():
+        if k not in cols:
+            raise ValueError(f"字段不存在: {k}")
+        clean[k] = _coerce(v, cols[k])
+    return clean
+
+
+def _row_where(conn: sqlite3.Connection, table_name: str, key) -> tuple[str, tuple]:
+    """由 key([[col, value], ...]) 构造 WHERE 片段，只允许主键列或 rowid"""
+    if not isinstance(key, list) or not key:
+        raise ValueError("缺少行标识 key")
+    pk_cols = _pk_columns(conn, table_name) or ["rowid"]
+    conditions, params = [], []
+    for pair in key:
+        if not isinstance(pair, list) or len(pair) != 2:
+            raise ValueError("key 每项应为 [列名, 值]")
+        col, val = pair[0], pair[1]
+        if col not in pk_cols:
+            raise ValueError(f"行标识字段无效: {col}")
+        conditions.append(f"{_quote_ident(col)} = ?")
+        params.append(val)
+    return " AND ".join(conditions), tuple(params)
+
+
+def insert_row(db_name: str, table_name: str, values: dict) -> dict:
+    conn = _get_conn(db_name)
+    try:
+        if not _resolve_table(conn, table_name):
+            raise ValueError(f"表不存在: {table_name}")
+        clean = _validate_values(conn, table_name, values)
+        # 主键列留空则剔除，交给 SQLite 自动生成
+        for c in _pk_columns(conn, table_name):
+            clean.pop(c, None)
+        if not clean:
+            raise ValueError("没有可写入的字段")
+        cols = list(clean.keys())
+        sql = (
+            f"INSERT INTO {_quote_ident(table_name)} "
+            f"({', '.join(_quote_ident(c) for c in cols)}) "
+            f"VALUES ({', '.join('?' for _ in cols)})"
+        )
+        cur = conn.execute(sql, list(clean.values()))
+        conn.commit()
+        return {"ok": True, "id": cur.lastrowid}
+    finally:
+        conn.close()
+
+
+def update_row(db_name: str, table_name: str, key, values: dict) -> dict:
+    conn = _get_conn(db_name)
+    try:
+        if not _resolve_table(conn, table_name):
+            raise ValueError(f"表不存在: {table_name}")
+        where_sql, where_params = _row_where(conn, table_name, key)
+        clean = _validate_values(conn, table_name, values)
+        # 不允许修改主键列
+        for c in _pk_columns(conn, table_name):
+            clean.pop(c, None)
+        if not clean:
+            raise ValueError("没有可更新的字段")
+        set_sql = ", ".join(f"{_quote_ident(c)} = ?" for c in clean)
+        cur = conn.execute(
+            f"UPDATE {_quote_ident(table_name)} SET {set_sql} WHERE {where_sql}",
+            list(clean.values()) + list(where_params),
+        )
+        conn.commit()
+        return {"ok": True, "affected": cur.rowcount}
+    finally:
+        conn.close()
+
+
+def delete_row(db_name: str, table_name: str, key) -> dict:
+    conn = _get_conn(db_name)
+    try:
+        if not _resolve_table(conn, table_name):
+            raise ValueError(f"表不存在: {table_name}")
+        where_sql, where_params = _row_where(conn, table_name, key)
+        cur = conn.execute(
+            f"DELETE FROM {_quote_ident(table_name)} WHERE {where_sql}",
+            where_params,
+        )
+        conn.commit()
+        return {"ok": True, "affected": cur.rowcount}
     finally:
         conn.close()
