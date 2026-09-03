@@ -11,8 +11,13 @@ async def _statistics(bot, group_id: str, user_id: str) -> str:
     return await asyncio.to_thread(storage.statistics, group_id, user_id)
 
 
+async def _signout(bot, group_id: str, user_id: str) -> str:
+    return await asyncio.to_thread(storage.signout, group_id, user_id)
+
+
 COMMANDS = {
     "签到统计": _statistics,
+    "签退": _signout,
 }
 
 # 签到触发词："文综楼已到"、"博达楼已到" 等 "XX楼已到"
