@@ -49,10 +49,11 @@ from config import load_feature_config
 # bot       → 发消息、查信息全靠它
 # group_id  → 群号
 # user_id   → 发消息的人的 QQ 号
-async def cmd_hello(bot, group_id, user_id):
+# text      → 群友发的原始消息全文(用不到就忽略)
+async def cmd_hello(bot, group_id, user_id, text):
     return "你好！"         # 返回字符串 = 机器人自动发到群里
 
-async def cmd_help(bot, group_id, user_id):
+async def cmd_help(bot, group_id, user_id, text):
     return "可用命令：/hello、/help"
 
 # ★ 必须导出 COMMANDS，机器人才能发现你的命令
@@ -147,6 +148,6 @@ python -c "from features import discover, _commands, _patterns; discover(); prin
 
 - 每步功能里，**有 `COMMANDS`（精确）或 `COMMAND_PATTERNS`（正则）才会被自动发现**
 - handler 函数必须是 `async`
-- 所有 handler 签名：`(bot, group_id, user_id)` 三个参数
+- 所有 handler 签名：`(bot, group_id, user_id, text)`，`text` 是原始消息全文（用不到就忽略）
 - 返回 `None` 或空字符串 = 不回复
 - `bot` 可用的函数：`bot.send_group_msg(群号, 内容)`、`bot.get_group_member_name(群号, QQ号)`

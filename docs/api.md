@@ -20,10 +20,11 @@ COMMAND_PATTERNS = {
 处理函数签名：
 
 ```python
-async def 函数名(bot, group_id: str, user_id: str) -> str | None:
+async def 函数名(bot, group_id: str, user_id: str, text: str) -> str | None:
     ...
 ```
 
+- `text` → 群友发送的原始消息全文（用不到就忽略）
 - 返 `字符串` → 机器人自动发送到群里
 - 返 `None` → 不回复
 

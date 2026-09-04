@@ -6,8 +6,8 @@
 - 可选导出 COMMAND_PATTERNS 字典（正则匹配，键为正则字符串）
 - COMMANDS = {"/cmd": async_handler, ...}
 - COMMAND_PATTERNS = {r"^关键词.+$": async_handler, ...}
-- handler 签名: async def handler(bot, group_id, user_id) -> str | None
-  返回字符串则自动发送，返回 None 则静默
+- handler 签名: async def handler(bot, group_id, user_id, text) -> str | None
+  text 是原始消息全文（用不到可以忽略），返回字符串则自动发送，返回 None 则静默
 """
 
 import importlib
@@ -54,7 +54,7 @@ def discover():
 
 async def _run(handler: Callable, bot, group_id: str, user_id: str, src: str) -> str | None:
     try:
-        return await handler(bot, group_id, user_id)
+        return await handler(bot, group_id, user_id, src)
     except Exception as e:
         logger.exception(f"执行命令 {src} 异常: {e}")
         return f"命令执行出错: {e}"

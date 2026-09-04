@@ -19,49 +19,25 @@ def _parse_hhmm(s: str) -> int:
 
 
 def _shifts() -> list[dict]:
-    """读取班次配置。
+    """读取班次配置。到岗即结算。
 
     每个班次:
+      hours       固定录入时长(白天班次)
+      options     群友可选时长(晚班, 如 [2,3], 由 +N 后缀指定), 无则 None
       arrive_m    签到窗口开始
-      signin_to_m 签到窗口截止(有 leave_tiers 的档位班次为首档时刻, 其余为 leave_m)
-      leave_m     离岗/班次结束时刻
-      duration    白天固定录入时长(小时)
-      tiers       晚班按签退时刻给时长: 升序 [(分钟, 小时), ...], 无则 None
+      leave_m     签到窗口截止(= 班次结束)
     """
     cfg = load_feature_config("checkin")
     shifts = []
     for s in cfg.get("checkin_shifts", []):
-        arrive_m = _parse_hhmm(s["arrive"])
-        leave_m = _parse_hhmm(s["leave"])
-        tiers_raw = s.get("leave_tiers")
-        tiers = (
-            sorted((_parse_hhmm(t["at"]), t["hours"]) for t in tiers_raw)
-            if tiers_raw else None
-        )
         shifts.append({
             "name": s["name"],
-            "duration": s.get("duration_hours", 0),
-            "arrive_m": arrive_m,
-            "leave_m": leave_m,
-            "signin_to_m": tiers[0][0] if tiers else leave_m,
-            "tiers": tiers,
+            "hours": s.get("duration_hours", 0),
+            "options": tuple(sorted(s.get("options_hours", []))) if s.get("options_hours") else None,
+            "arrive_m": _parse_hhmm(s["arrive"]),
+            "leave_m": _parse_hhmm(s["leave"]),
         })
     return shifts
-
-
-def _shift_by_name(name: str) -> dict | None:
-    return next((s for s in _shifts() if s["name"] == name), None)
-
-
-def _default_credit() -> int:
-    cfg = load_feature_config("checkin")
-    return cfg.get("checkin_default_credit", 2)
-
-
-def _min_minutes() -> int:
-    """签退需晚于签到的最短分钟数(防签到即签退刷时长);0 表示不限制"""
-    cfg = load_feature_config("checkin")
-    return int(cfg.get("checkin_min_minutes", 0) or 0)
 
 
 # ---- 时间 ----
@@ -70,23 +46,14 @@ def _now() -> datetime:
     return datetime.utcnow() + TIMEZONE
 
 
-def _today_str() -> str:
-    return _now().strftime("%Y-%m-%d")
-
-
 def _current_shift() -> dict | None:
-    """根据当前时间匹配签到窗口(到岗 ~ 签到窗口截止)"""
+    """根据当前时间匹配签到窗口(到岗 ~ 班次结束)"""
     now = _now()
     t = now.hour * 60 + now.minute
     for s in _shifts():
-        if s["arrive_m"] <= t < s["signin_to_m"]:
+        if s["arrive_m"] <= t < s["leave_m"]:
             return s
     return None
-
-
-def _at_datetime(date_str: str, minutes: int) -> datetime:
-    y, m, d = map(int, date_str.split("-"))
-    return datetime(y, m, d, minutes // 60, minutes % 60)
 
 
 # ---- 数据库 ----
@@ -113,8 +80,7 @@ def _init_db(conn: sqlite3.Connection):
             date        TEXT NOT NULL,
             period      TEXT NOT NULL,
             duration    INTEGER DEFAULT 0,
-            sign_in_at  TEXT,
-            sign_out_at TEXT
+            sign_in_at  TEXT
         )
     """)
     conn.execute("""
@@ -136,40 +102,10 @@ def _cleanup(conn: sqlite3.Connection):
     conn.commit()
 
 
-# ---- 签到 / 签退 ----
+# ---- 签到(到岗即结算) ----
 
-def _pending_rows(conn: sqlite3.Connection, group_id: str, user_id: str) -> list[sqlite3.Row]:
-    return conn.execute(
-        "SELECT id, date, period, sign_in_at FROM records "
-        "WHERE group_id=? AND user_id=? AND sign_out_at IS NULL ORDER BY id",
-        (group_id, user_id),
-    ).fetchall()
-
-
-def _expire_pending(conn: sqlite3.Connection, row: sqlite3.Row):
-    """把一条已过本班次离岗时刻的待结算记录按兜底时长结算"""
-    shift = _shift_by_name(row["period"])
-    if shift is None:
-        return
-    leave_dt = _at_datetime(row["date"], shift["leave_m"])
-    if _now() > leave_dt:
-        conn.execute(
-            "UPDATE records SET sign_out_at=?, duration=? WHERE id=?",
-            (leave_dt.strftime(DT_FMT), _default_credit(), row["id"]),
-        )
-
-
-def _finalize_expired(conn: sqlite3.Connection, group_id: str, user_id: str):
-    """把所有已过离岗时刻的待结算记录结算为兜底时长"""
-    rows = _pending_rows(conn, group_id, user_id)
-    if not rows:
-        return
-    for row in rows:
-        _expire_pending(conn, row)
-    conn.commit()
-
-
-def checkin(group_id: str, user_id: str, user_name: str = "") -> str:
+def checkin(group_id: str, user_id: str, user_name: str = "", hours: int | None = None) -> str:
+    """到岗签到即结算时长。hours 来自消息 +N 后缀, 仅晚班需要。"""
     if not group_id or not user_id:
         return "参数错误。"
 
@@ -177,111 +113,58 @@ def checkin(group_id: str, user_id: str, user_name: str = "") -> str:
     if shift is None:
         return "当前不在任何班次的签到时段内。"
 
+    if shift["options"] is None:
+        # 白班固定时长, 不接受 +N
+        if hours is not None:
+            return "白天班次无需带 +N, 直接发送「XX楼已到」即可。"
+        credit = shift["hours"]
+    else:
+        # 晚班: 必须带 +N 且 N 在可选时长内
+        if hours is None or hours not in shift["options"]:
+            opts = sorted(shift["options"])
+            return (
+                f"晚班签到请带上时长后缀, 如「XX楼已到+{opts[0]}」(到21点) "
+                f"或「XX楼已到+{opts[-1]}」(到22点)。"
+            )
+        credit = hours
+
     now = _now()
     today = now.strftime("%Y-%m-%d")
 
     conn = _get_conn()
     try:
-        # 先结算本人已过时的未签退班次(漏签退 → 兜底)
-        _finalize_expired(conn, group_id, user_id)
-
-        # INSERT OR IGNORE 依赖唯一索引, 消除 SELECT→INSERT 竞态, 保证每班次每天只签一次
+        # INSERT OR IGNORE 依赖唯一索引, 保证每人每班次每天只结算一次
         cur = conn.execute(
             "INSERT OR IGNORE INTO records "
             "(group_id, user_id, user_name, date, period, duration, sign_in_at) "
-            "VALUES (?, ?, ?, ?, ?, 0, ?)",
-            (group_id, user_id, user_name, today, shift["name"], now.strftime(DT_FMT)),
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (group_id, user_id, user_name, today, shift["name"], credit, now.strftime(DT_FMT)),
         )
         if cur.rowcount == 0:
             return f"你今天「{shift['name']}」已经签到过了。"
         conn.commit()
+
+        today_sum = _sum_duration(conn, group_id, user_id, today)
+        total_sum = _sum_duration(conn, group_id, user_id)
         _cleanup(conn)
-        return f"签到成功! {shift['name']}，请离岗时发送「签退」。"
-    finally:
-        conn.close()
-
-
-def signout(group_id: str, user_id: str) -> str:
-    if not group_id or not user_id:
-        return "参数错误。"
-
-    conn = _get_conn()
-    try:
-        now = _now()
-        rows = _pending_rows(conn, group_id, user_id)
-        if not rows:
-            return "今天没有需要签退的班次。"
-
-        # 只结算最近一条; 更早的未签退班次视为漏签退 → 兜底
-        for row in rows[:-1]:
-            _expire_pending(conn, row)
-        conn.commit()
-        target = rows[-1]
-
-        # 最短在岗限制: 防止签到即签退刷时长
-        min_m = _min_minutes()
-        if min_m > 0 and target["sign_in_at"]:
-            sign_in_dt = datetime.strptime(target["sign_in_at"], DT_FMT)
-            waited = int((now - sign_in_dt).total_seconds() // 60)
-            if waited < min_m:
-                return f"签到满 {min_m} 分钟才能签退(已 {waited} 分钟)。"
-
-        shift = _shift_by_name(target["period"])
-        hours = _signout_hours(shift, now)
-        conn.execute(
-            "UPDATE records SET sign_out_at=?, duration=? WHERE id=?",
-            (now.strftime(DT_FMT), hours, target["id"]),
-        )
-        conn.commit()
-        _cleanup(conn)
-        return f"签退成功! {target['period']} +{_format_duration(hours)}"
-    finally:
-        conn.close()
-
-
-def _signout_hours(shift: dict | None, now: datetime) -> int:
-    if shift is not None and shift["tiers"]:
-        m = now.hour * 60 + now.minute
-        for at_m, hours in shift["tiers"]:
-            if m <= at_m:
-                return hours
-        return shift["tiers"][-1][1]  # 超过最后一档按最高档
-    return shift["duration"] if shift else _default_credit()
-
-
-def statistics(group_id: str, user_id: str) -> str:
-    conn = _get_conn()
-    try:
-        # 把已过时未签退的班次结算掉, 统计才准确
-        _finalize_expired(conn, group_id, user_id)
-
-        today = _today_str()
-        today_sum = conn.execute(
-            "SELECT COALESCE(SUM(duration), 0) FROM records WHERE group_id=? AND user_id=? AND date=?",
-            (group_id, user_id, today),
-        ).fetchone()[0]
-        total_sum = _get_total(conn, group_id, user_id)
-        pending = len(_pending_rows(conn, group_id, user_id))
-
-        msg = (
+        return (
+            f"签到成功! {shift['name']} +{_format_duration(credit)}\n"
             f"今日: {_format_duration(today_sum)}\n"
             f"累计: {_format_duration(total_sum)}"
         )
-        if pending:
-            msg += f"\n另有 {pending} 个班次待签退"
-        return msg
     finally:
         conn.close()
 
 
 # ---- 内部辅助 ----
 
-def _get_total(conn: sqlite3.Connection, group_id: str, user_id: str) -> int:
-    row = conn.execute(
-        "SELECT COALESCE(SUM(duration), 0) FROM records WHERE group_id=? AND user_id=?",
-        (group_id, user_id),
-    ).fetchone()
-    return row[0]
+def _sum_duration(conn: sqlite3.Connection, group_id: str, user_id: str, date: str | None = None) -> int:
+    sql = "SELECT COALESCE(SUM(duration), 0) FROM records WHERE group_id=? AND user_id=?"
+    args: list = [group_id, user_id]
+    if date:
+        sql += " AND date=?"
+        args.append(date)
+    return conn.execute(sql, args).fetchone()[0]
 
 
 def _format_duration(hours: int) -> str:

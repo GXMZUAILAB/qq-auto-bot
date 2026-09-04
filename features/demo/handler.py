@@ -1,7 +1,7 @@
 from config import load_feature_config
 
 
-async def _demo(bot, group_id, user_id):
+async def _demo(bot, group_id, user_id, text):
     # 检查功能是否启用，未启用时不回复
     cfg = load_feature_config("demo") # 读取自定义的 demo.yaml 配置文件
     if not cfg.get("enabled", False):  # cfg.get("enabled") 读取 enabled 的值
