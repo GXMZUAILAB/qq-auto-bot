@@ -50,7 +50,7 @@ records (
     date        TEXT NOT NULL,      -- 签到日期
     period      TEXT NOT NULL,      -- 班次名称
     duration    INTEGER DEFAULT 0,  -- 录入时长（小时，签到即结算）
-    sign_in_at  TEXT                -- 签到时间
+    time        TEXT                -- 签到时间(当日 HH:MM:SS)
 )
 ```
 

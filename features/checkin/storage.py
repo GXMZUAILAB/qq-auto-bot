@@ -8,7 +8,7 @@ TIMEZONE = timedelta(hours=8)
 DB_FILE = get("data", "file", default="data/checkin_data.db")
 RETAIN_DAYS = get("data", "retain_days", default=0)
 
-DT_FMT = "%Y-%m-%d %H:%M:%S"
+TM_FMT = "%H:%M:%S"
 
 
 # ---- 班次配置 ----
@@ -80,7 +80,7 @@ def _init_db(conn: sqlite3.Connection):
             date        TEXT NOT NULL,
             period      TEXT NOT NULL,
             duration    INTEGER DEFAULT 0,
-            sign_in_at  TEXT
+            time        TEXT
         )
     """)
     conn.execute("""
@@ -136,9 +136,9 @@ def checkin(group_id: str, user_id: str, user_name: str = "", hours: int | None 
         # INSERT OR IGNORE 依赖唯一索引, 保证每人每班次每天只结算一次
         cur = conn.execute(
             "INSERT OR IGNORE INTO records "
-            "(group_id, user_id, user_name, date, period, duration, sign_in_at) "
+            "(group_id, user_id, user_name, date, period, duration, time) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (group_id, user_id, user_name, today, shift["name"], credit, now.strftime(DT_FMT)),
+            (group_id, user_id, user_name, today, shift["name"], credit, now.strftime(TM_FMT)),
         )
         if cur.rowcount == 0:
             return f"你今天「{shift['name']}」已经签到过了。"
